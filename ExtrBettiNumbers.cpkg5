@@ -1,0 +1,269 @@
+package $contrib/ExtrBettiNumbers
+  
+export StronglyStableIdealEB;
+export AdmissibleValues;  
+
+
+Define About()
+  PrintLn "    KeyWords : Extremal, Betti, Corners, Borel, StronglyStable";
+  PrintLn "    Author   : M. Crupi, L. Amata";
+  PrintLn "    Version  : CoCoA 5.1";
+  PrintLn "    Date     : 02 February 2017";
+EndDefine; -- About
+
+-----------------------------------------------------------------------
+-- Exported functions are:
+
+-- AdmissibleValues(R, Corners)    -- Set of admitted values of a for Corners
+  
+-- StronglyStableIdealEB(R, Corners, a)   -- Minimal FGB Ideal for Corners and Extremal Betti Numerbers
+  
+-----------------------------------------------------------------------
+
+
+-- Main Function for FGBI (for users)
+Define AdmissibleValues(R, Corners)
+ -- Variables Inizialization
+  r:=len(Corners);
+  k:=[Corners[p,1] | p in 1..r];
+  l:=[Corners[p,2] | p in 1..r];
+  a:=[1 | p in 1..r];
+  a[r]:=0;
+  fa:=[0 | p in 1..r];
+  ub:=[binomial(k[p]+l[p]-1,l[p]-1) | p in 1..r];
+  av:=[];
+
+  repeat
+    a[r]:=a[r]+1;
+    --Upper Bound Control
+    i:=r;    
+    while (i>1)and(a[i]>ub[i]) do
+      a[i]:=1;
+      i:=i-1;
+      a[i]:=a[i]+1;
+    endwhile;
+    --FGBI computation
+    I:=$.StronglyStableIdealEB(R,Corners,a,0);
+    if not(IsZero(I)) then
+      append(ref av,a);  --Admissible values
+    else
+      if fa[i]=0 then    -- Optimal Upper Bounds
+	fa[i]:=1;
+	ub[i]:=a[i]-1;
+      endif;
+    endif;
+    --println "a=",a;
+    --println "ub=",ub;
+  until fa[1]=1;
+Return transposed(matrix(av));
+EndDefine; -- AdmissibleValues
+  
+  
+-- Main Function for FGBI (for users)
+Define StronglyStableIdealEB(R, Corners, a, pr)
+  -- Ring Initialization
+  n:=NumIndets(R);
+  -- R:=NewPolyRing(RingQQ(),IndetSymbols(R),StdDegLexMat(n),1);
+  ind:=indets(R);
+  -- Variables Inizialization
+  r:=len(Corners);
+  k:=[Corners[p,1] | p in 1..r];
+  l:=[Corners[p,2] | p in 1..r];
+  I:=ideal(RingElem(R,0));
+  -- Hypotheses Verification
+  condK:=(k[r]<1)or(k[1]>n-1) or not(k=SortedBy(k,Func(p,q) return p>=q; endfunc));
+  condL:=(l[1]<2)or not(l=Sorted(l));
+  condA:=r<>len(a);
+  Cond2:=l[1]=2 and (not(r IsIn 2..n-2)or(n<5)or(k[r]<2));
+  Cond3:=l[1]>=3 and (not(r IsIn 1..n-1)or(k[r]<1));  
+  if condK or condL or condA or Cond2 or Cond3 then
+    if pr<>0 then
+      print "Hypotheses are not verified.";
+    endif;
+  else  
+    -- Ideal Computation
+    I:=$.StronglyStableIdeal3EB(R,k,l,a,pr);
+  endif;
+  Return I;
+EndDefine; -- StronglyStableIdealEB
+  
+  
+-- Strongly Stable Ideal Computation for r>2
+Define StronglyStableIdeal3EB(R,k,l,a,pr)
+  -- Variables Initialization
+  n:=NumIndets(R);
+  S:=NewPolyRing(RingQQ(),IndetSymbols(R),StdDegLexMat(n),1);
+  ind:=indets(S);
+  r:=len(k);
+  I:=ideal(RingElem(S,0));
+  G:=[];  Amu:=[];  L:=[];
+  -- Existence Conditions
+  Af:=AConditions(S,k,l,a);
+  condE:=false;
+  foreach i in 1..r do
+    condE:=condE or (a[i]<1) or (a[i]>len(Af[i]));	
+  endforeach;
+  if condE then
+    if pr<>0 then
+      println "\n Corresponding Strongly Stable Ideals does not exist.";
+    endif;
+  else
+    -- Componente of degree l[1]
+    append(ref Amu,AMonomials(S,"<=",k[1],l[1]));
+    append(ref G,[X in Amu[1] | (X<=ind[1]^l[1])and(X>=Af[1,a[1]])]);   
+    -- Components of degree l[2]..l[r]    
+    foreach i in 2..r do
+      append(ref Amu,AMonomials(S,"<=",k[i],l[i]));
+      max:=Af[i-1,a[i-1]]*ind[n]^(l[i]-l[i-1]);
+      append(ref G,[X in Amu[i] | (X<max)and(X>=Af[i,a[i]])]);   
+    endforeach;
+    
+    foreach i in 1..r do
+       append(ref L,[X in Amu[i] | X>=Af[i,a[i]]]);
+    endforeach;
+
+    if pr<>0 then
+      println "\n Strongly Stable Ideals has been computed:";
+      println "\n Generators : ",flatten(G);
+      println "\n Borel Generators : ",$.BorelGens(S,G);
+      println "\n Piecewise Components :";
+      foreach i in 1..r do
+       println "\n L_",i,"=",L[i];
+      endforeach;
+    endif;
+  endif;
+
+  -- Ideal
+    Conv:=[];
+    foreach el in flatten(G) do
+       append(ref Conv,RingElem(R,sprint(el)));
+      endforeach;
+    if flatten(Conv)=[] then
+       append(ref Conv,RingElem(R,0)); 
+    endif;
+    I:=ideal(flatten(Conv));
+
+  Return I;
+EndDefine; -- StronglyStableIdealEB  
+  
+
+-- Borel Generators Computation
+Define BorelGens(R,G)
+  B:=[];
+  foreach i in 1..len(G) do
+    append(ref B,min(G[i]));
+  endforeach;
+  return B;
+enddefine; -- BorelGens
+
+  
+-- Ai\LexShad Sets Computation
+Define AConditions(R,k,l,a)
+  -- Variables Initialization 
+  r:=len(k);
+  ind:=indets(R);
+  n:=NumIndets(R);
+  ins:=[i in 1..r | l[i]<=r-i];
+  t:=0;
+  if (ins<>[]) then t:=max(ins); endif;
+  Am:=[]; Al:=[];  LS:=[];  Af:=[];
+  -- Ai Computation
+  foreach i in 1..r do
+    append(ref Am,AMonomials(R,"=",k[i],l[i]));
+    -- Minimal Monomial Computation
+    if (i=1)and(l[1]=2) then 
+      m:=ind[k[r]-1]*ind[k[1]+1];
+      if r=2 then m:=m*ind[k[r]]; endif;
+    endif;
+    if ((i IsIn 1..t)and(l[1]>=3))or((i IsIn 2..t)and(l[1]=2)) then
+      m:=product([ind[k[j]] | j in (r-l[i]+3)..r]);
+      m:=m*ind[k[r-l[i]+2]-1]*ind[k[i]+1];
+    endif;
+    if (i IsIn t+1..r-1) then
+      m:=product([ind[k[j]] | j in i+1..r]);
+      m:=m*ind[k[i]+1]^(l[i]-r+i);
+    endif;
+    if (i=r) then
+      m:=ind[k[r]+1]^l[r];
+    endif;
+    append(ref Al,[X in Am[i] | X>=m]);
+    -- LexShadow Computation
+    if i=1 then
+      append(ref LS,[]);
+    else
+      if a[i-1]<=len(Af[i-1]) then
+	-- Riformulation     
+	mi:=Af[i-1,a[i-1]]*ind[n]^(l[i]-l[i-1]);
+	append(ref LS,[X in Am[i] | (X<=ind[1]^l[i])and(X>=mi)]);
+      else
+	append(ref LS,[]);
+      endif;
+    endif;
+    -- Ai\LexShadow Computation
+    append(ref Af,diff(Al[i],LS[i]));
+    --println "A=",Al[i];
+    --println "LS=",LS[i];
+    --println "A/LS=",Af[i];
+    --println " ";
+  endforeach;
+  Return Af;
+EndDefine; -- AConditions
+  
+  
+-- A(k,l) and A(<=k,l) Computation
+Define AMonomials(R,s,k,l)
+  -- Variables Initialization
+  ind:=indets(R);
+  n:=NumIndets(R);
+  -- Condition
+  if k+1<=n then
+    F:=DensePoly(R,l);
+    M:=Monomials(F);
+    -- A(<=k,l) 
+    foreach i in k+2..n do
+      M:=[X in M | not(IsDivisible(X,ind[i]))];
+    endforeach;
+    -- A(k,l)
+    if s="=" then
+      M:=[X in M| IsDivisible(X,ind[k+1])];
+    endif;
+  endif;
+  Return M;
+EndDefine; -- AMonomials
+  
+    
+-- LexSegment Ideal for r=2 Computation
+Define LexSegmentIdeal2EB(R,k,l,opt a)
+  -- Variables Initialization
+  n:=NumIndets(R);
+  ind:=indets(R);
+  I:=ideal(RingElem(R,0));
+  -- Existenxe Conditions
+  cond:=false;
+  if IsDefined(a) then
+    bin:=[binomial(n-j+l[1]-2,l[1]-2)|j in 1..k[2]];
+    limsup:=sum(bin);
+    cond:=(a[1]<1)or(a[1]>limsup) or (a[2]<>1);
+  endif;
+  if (k[1]+1<>n) or cond then
+    print "Corresponding LexSegment Ideal does not exist.";
+  else
+    -- Component of degree l[1]
+    lexGl1:=[ind[1]^l[1]];
+    foreach i in 2..n do
+      append(ref lexGl1, ind[1]^(l[1]-1)*ind[i]);  
+    endforeach;
+    -- Component of degree l[2]    
+    lexGl2:=[ind[1]^(l[1]-2)*ind[2]^(l[2]-l[1]+2)];
+    foreach i in 3..(k[2]+1) do
+      append(ref lexGl2, ind[1]^(l[1]-2)*ind[2]^(l[2]-l[1]+1)*ind[i]);  
+    endforeach;
+    -- Ideal
+    G:=concat(lexGl1,lexGl2);
+    I:=ideal(G);
+    print "LexSegment Ideal has been computed.";
+  endif;
+  Return I;
+EndDefine; -- LexSegmentIdeal2EB
+
+endpackage; -- of Betti
